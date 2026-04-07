@@ -63,6 +63,8 @@ class QueryEngine:
 
     def _route_to_ninja(self, question: str) -> bool:
         q = question.lower()
+        if self._extract_hostname(question):
+            return True
         return any(kw in q for kw in DEVICE_KEYWORDS)
 
     def _route_to_crowdstrike(self, question: str) -> bool:
@@ -166,11 +168,23 @@ class QueryEngine:
 
         data_context = "\n\n".join(context_parts)
         user_message = f"Engineer's question: {question}\n\nData from connectors:\n{data_context}"
+        if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            return (
+                "Anthropic API key is not configured, so I cannot synthesize with Claude right now.\n\n"
+                f"Connector data:\n{data_context}"
+            )
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        return response.content[0].text
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            return response.content[0].text
+        except Exception as e:
+            return (
+                "Claude is currently unreachable, so returning raw connector output instead.\n"
+                f"Reason: {e}\n\n"
+                f"Connector data:\n{data_context}"
+            )
